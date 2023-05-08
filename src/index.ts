@@ -3,13 +3,23 @@ import express, { Response } from 'express';
 const app = express();
 app.use(express.json());
 
+interface IMessage {
+    senderId: string,
+    receiverId: string,
+    content: string
+}
+
+/**
+ * @param registeredUsers would be useful for permamently registered users
+ */
 const registeredUsers = [];
-const eventClients: Array<{
+const SSEClients: Array<{
     id: string,
     response: Response
 }> = [];
+const messageQueue: IMessage[] = []
 
-
+// User register function
 app.post('/register', (req, res) => {
     const username = req.body.username;
     if (!username) {
@@ -28,10 +38,10 @@ app.post('/register', (req, res) => {
     res.status(200).json({ success: true, data: { username: userId } });
 });
 
+// SSE emiter
 app.get('/events', (req, res) => {
-    const userId = req.query.id;
-    if (!userId) res.send(400).json({ success: false, error: 'No userId specified' });
-
+    const userId = req.query.id as string;
+    if (!userId) res.send(400).json({ success: false, error: 'No username specified' });
 
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -39,27 +49,54 @@ app.get('/events', (req, res) => {
         'Cache-Control': 'no-cache'
     });
 
-    const data = `data: ${JSON.stringify({ id: userId })}\n\n`;
+    req.on('close', () => {
+        console.log(userId + ' is offline');
+        const clientIndex = SSEClients.findIndex(item => item.id === userId);
+        if (clientIndex < 0) return;
+        SSEClients.splice(clientIndex);
+    });
 
-    res.write(data);
-
-    eventClients.push({
-        id: String(userId),
+    SSEClients.push({
+        id: userId,
         response: res
     });
 
-    console.log('Events client added');
-})
+    console.log(userId + ' is now listetning for server events');
 
-app.get('/test', (req, res) => {
-    eventClients.forEach(c => {
-        console.log(c.id)
-        c.response.write(`data: ${JSON.stringify({ newDataType: 'message' })}\n\n`);
-    });
+    // Check for awaiting messages and send event message
+    if (hasMessagesInQueue(userId)) {
+        emitMessageEventToUser(userId);
+    };
+});
+
+// Sending/downloading messages
+app.post('/message', (req, res) => {
+    if (!req.body.senderId && !req.body.receiverId && !req.body.content) res.send(400).json({ success: false, error: 'No receiverId or content' });
+    messageQueue.push({ ...req.body });
+    emitMessageEventToUser(req.body.receiverId);
     res.status(200).json({ success: true })
-})
+});
 
+app.get('/message', (req, res) => {
+    const userId = req.query.id as string;
+    if (!userId) res.send(400).json({ success: false, error: 'No username specified' });
+    const messagesToUser = messageQueue.filter(m => m.receiverId === userId);
+    const [statusCode, responseData] = messagesToUser.length > 0 ? [200, { data: messagesToUser }] : [204, { message: 'No content' }];
+    res.status(statusCode).json(responseData);
+});
+
+
+const hasMessagesInQueue = (userId: string) => {
+    const awaitingUserIds = messageQueue.map(m => m.receiverId)
+    return awaitingUserIds.includes(userId);
+};
+
+const emitMessageEventToUser = (userId: string) => {
+    const SSEClient = SSEClients.find(c => c.id === userId);
+    if (!SSEClient) return;
+    SSEClient.response.write(`data: ${JSON.stringify({ newContent: { type: 'message' } })}\n\n`);
+};
 
 app.listen(3000, () => {
     console.log('App is up and running!')
-})
+});
