@@ -17,7 +17,7 @@ const SSEClients: Array<{
     id: string,
     response: Response
 }> = [];
-const messageQueue: IMessage[] = []
+let messageQueue: IMessage[] = []
 
 // User register function
 app.post('/register', (req, res) => {
@@ -28,6 +28,7 @@ app.post('/register', (req, res) => {
                 success: false,
                 error: 'Request need to contain username'
             });
+        return;
     }
 
     const time = new Date().getTime().toString();
@@ -36,12 +37,16 @@ app.post('/register', (req, res) => {
     registeredUsers.push(userId);
 
     res.status(200).json({ success: true, data: { username: userId } });
+    return;
 });
 
 // SSE emiter
 app.get('/events', (req, res) => {
     const userId = req.query.id as string;
-    if (!userId) res.send(400).json({ success: false, error: 'No username specified' });
+    if (!userId) {
+        res.status(400).json({ success: false, error: 'No username specified' })
+        return;
+    };
 
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -71,16 +76,23 @@ app.get('/events', (req, res) => {
 
 // Sending/downloading messages
 app.post('/message', (req, res) => {
-    if (!req.body.senderId && !req.body.receiverId && !req.body.content) res.send(400).json({ success: false, error: 'No receiverId or content' });
+    if (!req.body.senderId && !req.body.receiverId && !req.body.content) {
+        res.status(400).json({ success: false, error: 'No receiverId or content' })
+        return;
+    };
     messageQueue.push({ ...req.body });
     emitMessageEventToUser(req.body.receiverId);
     res.status(200).json({ success: true })
 });
 
 app.get('/message', (req, res) => {
-    const userId = req.query.id as string;
-    if (!userId) res.send(400).json({ success: false, error: 'No username specified' });
+    const userId = req.query.userId as string;
+    if (!userId) {
+        res.status(400).json({ success: false, error: 'No username specified' });
+        return;
+    };
     const messagesToUser = messageQueue.filter(m => m.receiverId === userId);
+    messageQueue = messageQueue.filter(m => m.receiverId !== userId);
     const [statusCode, responseData] = messagesToUser.length > 0 ? [200, { data: messagesToUser }] : [204, { message: 'No content' }];
     res.status(statusCode).json(responseData);
 });
@@ -95,6 +107,7 @@ const emitMessageEventToUser = (userId: string) => {
     const SSEClient = SSEClients.find(c => c.id === userId);
     if (!SSEClient) return;
     SSEClient.response.write(`data: ${JSON.stringify({ newContent: { type: 'message' } })}\n\n`);
+    return;
 };
 
 app.listen(3000, () => {
