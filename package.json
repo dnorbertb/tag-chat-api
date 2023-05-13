@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "npx nodemon",
-    "build": "rimraf ./build && tsc"
+    "build": "rimraf ./dist && tsc"
   },
   "author": "",
   "license": "ISC",
