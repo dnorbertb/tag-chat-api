@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "npx nodemon",
+    "start": "node index.js",
     "build": "rimraf ./build && tsc"
   },
   "author": "",
